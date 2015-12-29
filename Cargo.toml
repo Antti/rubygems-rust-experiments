@@ -1,0 +1,10 @@
+[package]
+name = "test_ruby"
+version = "0.1.0"
+authors = ["Andrii Dmytrenko <andrii.dmytrenko@fundingcircle.com>"]
+
+[lib]
+name = "test_rust"
+crate-type = ["dylib"]
+
+[dependencies]
