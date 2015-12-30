@@ -1,4 +1,6 @@
 use ruby::*;
+use std::ops;
+use super::{RubyValue, cast_str};
 
 //
 // pub fn rb_ary_new() -> VALUE;
@@ -59,9 +61,19 @@ pub struct Array {
     val: VALUE
 }
 
+pub struct ArrayIterator {
+    arr: Array,
+    initial_size: usize,
+    current_idx: usize
+}
+
 impl Array {
     pub fn new() -> Self {
         Array { val: unsafe { rb_ary_new() } }
+    }
+
+    pub fn from_value(value: VALUE) -> Self {
+        Array { val: value }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
@@ -86,5 +98,45 @@ impl Array {
 
     pub fn unshift(&mut self, value: VALUE) -> VALUE {
         unsafe { rb_ary_unshift(self.val, value) }
+    }
+
+    pub fn len(&self) -> usize {
+        let value = RubyValue::from_value(unsafe { rb_funcall(self.val, rb_intern(cast_str("size\x00")), 0) } );
+        match value {
+            RubyValue::Fixnum(len) => len as usize,
+            _ => panic!("Unexpected result of array.size")
+        }
+    }
+
+    pub fn entry(&self, index: usize) -> VALUE {
+        unsafe { rb_ary_entry(self.to_value(), index as i64) }
+    }
+}
+
+impl ArrayIterator {
+    fn new(arr: Array) -> Self {
+        let len = arr.len();
+        ArrayIterator { arr: arr, initial_size: len, current_idx: 0 }
+    }
+}
+
+impl Iterator for ArrayIterator {
+    type Item = VALUE;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_idx < self.initial_size {
+            let val = self.arr.entry(self.current_idx);
+            self.current_idx += 1;
+            Some(val)
+        } else {
+            None
+        }
+    }
+}
+
+impl IntoIterator for Array {
+    type Item = VALUE;
+    type IntoIter = ArrayIterator;
+    fn into_iter(self) -> Self::IntoIter {
+        ArrayIterator::new(self)
     }
 }
