@@ -1,6 +1,4 @@
 #![feature(libc)]
-#![feature(associated_consts)]
-
 extern crate libc;
 
 #[allow(dead_code, non_upper_case_globals, non_camel_case_types)]
@@ -14,8 +12,10 @@ use ruby::*;
 use macros::*;
 use array::Array;
 use hash::Hash;
+
 use std::mem::transmute;
 use std::ffi::{CString, CStr};
+use std::fmt;
 
 #[derive(Debug)]
 enum RubyType {
@@ -39,15 +39,6 @@ enum RubyType {
     Data, // T_DATA
     Symbol //T_SYMBOL
 }
-
-// Basic types:
-// ruby::RUBY_T_FALSE => RubyType::False,
-// ruby::RUBY_T_FIXNUM => RubyType::Fixnum,
-// ruby::RUBY_T_FLOAT => RubyType::Float,
-// ruby::RUBY_T_NIL => RubyType::Nil,
-// ruby::RUBY_T_SYMBOL => RubyType::Symbol,
-// ruby::RUBY_T_TRUE => RubyType::True,
-// ruby::RUBY_T_UNDEF => RubyType::Undef,
 
 
 impl RubyType {
@@ -76,83 +67,38 @@ impl RubyType {
     }
 }
 
-#[derive(Debug)]
-enum RubyValue {
-    Nil, // T_NIL
-    Fixnum(i64), // T_FIXNUM
-    Float(f64), //T_FLOAT
-    Bool(bool), // T_TRUE, T_FALSE
-    String(String), // T_STRING
-    Array(Array), // T_ARRAY
-    Hash(Hash), // T_HASH
-    // Struct, // T_STRUCT
-    // Bignum, // T_BIGNUM
-    // Complex, // T_COMPLEX
-    // Rational, // T_RATIONAL
-    // File, // T_FILE
-    Symbol(VALUE), //T_SYMBOL
-    Object(VALUE)
+struct WrapValue(VALUE);
+
+impl fmt::Debug for WrapValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ruby_type = RubyType::from_value(self.0);
+        match ruby_type {
+            RubyType::Nil => write!(f, "Nil"),
+            RubyType::Fixnum => write!(f, "Fixnum({})", i64::from_value_unchecked(self.0)),
+            RubyType::Float => write!(f, "Float({})", f64::from_value_unchecked(self.0)),
+            RubyType::True | RubyType::False => write!(f, "Bool({})", bool::from_value_unchecked(self.0)),
+            RubyType::String => write!(f, "String({})", String::from_value_unchecked(self.0)),
+            RubyType::Symbol => write!(f, "Symbol(_not_implemented_yet_)"),
+            RubyType::Array => write!(f, "Array"),
+            RubyType::Hash => write!(f, "Hash"),
+            _ => write!(f, "Object")
+        }
+    }
 }
+
+
+#[derive(Debug)]
+pub struct Nil;
 
 pub trait ToValue {
     fn to_value(&self) -> VALUE;
 }
 
+// TODO: Use associated const when available and support access from the trait itself.
 pub trait FromValue: Sized {
-    const RUBY_TYPE: RubyType = RubyType::Object;
-    fn from_value(value: VALUE) -> Option<Self> {
-        match RubyType::from_value(value) {
-            Self::RUBY_TYPE => Some(FromValue::from_value_unchecked(value)),
-            _ => None
-        }
-    }
+    fn from_value(value: VALUE) -> Option<Self>;
     fn from_value_unchecked(value: VALUE) -> Self;
 }
-//
-// impl FromValue for RubyValue {
-//     fn from_value_unchecked(value: VALUE) -> Self {
-//         use std::slice;
-//         match RubyType::from_value(value) {
-//             RubyType::False => RubyValue::Bool(false),
-//             RubyType::True => RubyValue::Bool(true),
-//             RubyType::Nil => RubyValue::Nil,
-//             RubyType::Fixnum => RubyValue::Fixnum(unsafe { ruby::rb_fix2int(value) }),
-//             RubyType::Float => RubyValue::Float(unsafe { ruby::rb_float_value(value) }),
-//             RubyType::Symbol => RubyValue::Symbol(value),
-//             RubyType::Array => RubyValue::Array(Array::from_value(value)),
-//             RubyType::Hash => RubyValue::Hash(Hash::from_value(value)),
-//             RubyType::String => {
-//                 unsafe {
-//                     let strlen = ruby::rb_str_strlen(value) as usize;
-//                     let ptr = ruby::rb_string_value_ptr(&mut value) as *const u8;
-//                     let buf = slice::from_raw_parts(ptr, strlen);
-//                     RubyValue::String(String::from_utf8_lossy(buf).into_owned())
-//                 }
-//             },
-//             _ => RubyValue::Object(value)
-//         }
-//     }
-//     fn from_value(mut value: VALUE) -> Option<Self> {
-//         Some(FromValue::from_value_unchecked(value))
-//     }
-// }
-
-// impl ToValue for RubyValue {
-//     fn to_value(&self) -> VALUE {
-//         match *self {
-//             RubyValue::Bool(true) => RUBY_Qtrue as VALUE,
-//             RubyValue::Bool(false) => RUBY_Qfalse as VALUE,
-//             RubyValue::Nil => RUBY_Qnil as VALUE,
-//             RubyValue::Fixnum(num) => INT2FIX(num),
-//             RubyValue::Float(num) => unsafe { rb_float_new(num) },
-//             RubyValue::Symbol(val) => val,
-//             RubyValue::Array(ref arr) => arr.to_value(),
-//             RubyValue::Hash(ref hash) => hash.to_value(),
-//             RubyValue::String(ref s) => unsafe { rb_str_new_cstr(CString::new(s.clone()).unwrap().as_ptr() as *const i8) },
-//             RubyValue::Object(val) => val,
-//         }
-//     }
-// }
 
 impl FromValue for VALUE {
     fn from_value(val: VALUE) -> Option<Self> {
@@ -172,11 +118,10 @@ impl ToValue for VALUE {
 
 
 // Core type from value
-
 impl FromValue for bool {
     fn from_value(value: VALUE) -> Option<Self> {
         match RubyType::from_value(value)  {
-            RubyType::False | RubyType::False => Some(FromValue::from_value_unchecked(value)),
+            RubyType::False | RubyType::True => Some(FromValue::from_value_unchecked(value)),
             _ => None
         }
     }
@@ -191,22 +136,49 @@ impl FromValue for bool {
 
 
 impl FromValue for i64 {
-    const RUBY_TYPE: RubyType = RubyType::Fixnum;
     fn from_value_unchecked(value: VALUE) -> Self {
         unsafe { ruby::rb_fix2int(value) }
+    }
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::Fixnum => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
+    }
+}
+
+impl FromValue for i32 {
+    fn from_value_unchecked(value: VALUE) -> Self {
+        unsafe { ruby::rb_num2short(value) as i32 }
+    }
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::Fixnum => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
     }
 }
 
 impl FromValue for f64 {
-    const RUBY_TYPE: RubyType = RubyType::Float;
     fn from_value_unchecked(value: VALUE) -> Self {
         unsafe { ruby::rb_float_value(value) }
+    }
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::Float => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
     }
 }
 
 impl FromValue for String {
-    const RUBY_TYPE: RubyType = RubyType::String;
-    fn from_value_unchecked(value: VALUE) -> Self {
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::String => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
+    }
+    fn from_value_unchecked(mut value: VALUE) -> Self {
         use std::slice;
         unsafe {
             let strlen = ruby::rb_str_strlen(value) as usize;
@@ -217,6 +189,56 @@ impl FromValue for String {
     }
 }
 
+impl FromValue for Nil {
+    fn from_value_unchecked(_value: VALUE) -> Self {
+        Nil
+    }
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::Nil => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
+    }
+}
+
+impl ToValue for bool {
+    fn to_value(&self) -> VALUE {
+        match *self {
+            true => RUBY_Qtrue as VALUE,
+            false => RUBY_Qfalse as VALUE
+        }
+    }
+}
+
+impl ToValue for i64 {
+    fn to_value(&self) -> VALUE {
+        INT2FIX(*self)
+    }
+}
+
+impl ToValue for i32 {
+    fn to_value(&self) -> VALUE {
+        INT2FIX(*self as i64)
+    }
+}
+
+impl ToValue for f64 {
+    fn to_value(&self) -> VALUE {
+        unsafe { rb_float_new(*self) }
+    }
+}
+
+impl ToValue for String {
+    fn to_value(&self) -> VALUE {
+        unsafe { rb_str_new_cstr(CString::new(self.clone()).unwrap().as_ptr() as *const i8) }
+    }
+}
+
+impl ToValue for Nil {
+    fn to_value(&self) -> VALUE {
+        RUBY_Qnil as VALUE
+    }
+}
 
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -229,25 +251,25 @@ pub unsafe extern "C" fn Init_test_rust() {
 pub extern "C" fn foo(_this: VALUE, arg: VALUE) -> VALUE { //argc: usize, argv: *const VALUE, this: VALUE
     ruby_eval_string("puts 'hello world from rust'");
     let mut ary = Array::new();
-    ary.push(RubyValue::Nil);
-    ary.push(RubyValue::Bool(true));
-    ary.push(INT2FIX(25));
-    ary.push(INT2FIX(rb_type(arg) as i64));
+    ary.push(Nil);
+    ary.push(true);
+    ary.push(25);
+    ary.push(rb_type(arg) as i64);
     println!("Type of arg: {:?}", RubyType::from_value(arg));
-    println!("Arg value: {:?}", RubyValue::from_value(arg));
-    if let Some(RubyValue::Array(arr)) = RubyValue::from_value(arg) {
+    // println!("Arg value: {:?}", RubyValue::from_value(arg));
+    if let Some(arr) = Array::from_value(arg) {
         for val in arr {
-            println!("Array item: {:?}", RubyValue::from_value(val))
+            println!("Array item: {:?}", WrapValue(val))
         }
     }
 
-    if let Some(RubyValue::Hash(hash)) = RubyValue::from_value(arg) {
-        println!("Hash len: {:?}", RubyValue::from_value(hash.len()));
-        println!("Hash keys: {:?}", hash.keys().into_iter().map(|itm| RubyValue::from_value(itm)).collect::<Vec<_>>() );
+    if let Some(hash) = Hash::from_value(arg) {
+        println!("Hash len: {:?}", i32::from_value(hash.len()));
+        println!("Hash keys: {:?}", hash.keys().into_iter().map(|itm| WrapValue(itm)).collect::<Vec<_>>() );
     }
 
     println!("Arg class name: {:?}", unsafe { CStr::from_ptr(rb_obj_classname(arg)) } );
-    println!("Arg class name manual: {:?}", unsafe { RubyValue::from_value(rb_class_name(rb_funcall(arg, rb_intern(cast_str("class\x00")), 0))) } );
+    println!("Arg class name manual: {:?}", unsafe { String::from_value(rb_class_name(rb_funcall(arg, rb_intern(cast_str("class\x00")), 0))) } );
     ary.to_value()
 }
 

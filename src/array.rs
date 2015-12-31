@@ -1,5 +1,5 @@
 use ruby::*;
-use super::{RubyValue, cast_str, ToValue, FromValue};
+use super::{cast_str, ToValue, FromValue, RubyType};
 
 //
 // pub fn rb_ary_new() -> VALUE;
@@ -71,10 +71,6 @@ impl Array {
         Array { val: unsafe { rb_ary_new() } }
     }
 
-    pub fn from_value(value: VALUE) -> Self {
-        Array { val: value }
-    }
-
     pub fn with_capacity(capacity: usize) -> Self {
         Array { val: unsafe { rb_ary_new_capa(capacity as i64) } }
     }
@@ -103,15 +99,27 @@ impl Array {
     //     unsafe { (*(*r_array)._as.heap()) }.len as usize
     // }
     pub fn len(&self) -> usize {
-        let value = RubyValue::from_value(unsafe { rb_funcall(self.val, rb_intern(cast_str("size\x00")), 0) } );
+        let value : Option<i64> =  FromValue::from_value(unsafe { rb_funcall(self.val, rb_intern(cast_str("size\x00")), 0) });
         match value {
-            Some(RubyValue::Fixnum(len)) => len as usize,
+            Some(len) => len as usize,
             _ => panic!("Unexpected result of array.size")
         }
     }
 
     pub fn entry(&self, index: usize) -> VALUE {
         unsafe { rb_ary_entry(self.to_value(), index as i64) }
+    }
+}
+
+impl FromValue for Array {
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::Array => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
+    }
+    fn from_value_unchecked(value: VALUE) -> Self {
+        Array { val: value }
     }
 }
 

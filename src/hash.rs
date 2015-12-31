@@ -1,6 +1,6 @@
 use ruby::*;
 use array::Array;
-use super::{RubyValue, cast_str, FromValue, ToValue};
+use super::{cast_str, FromValue, ToValue, RubyType};
 
 // pub fn rb_hash_foreach(arg1: VALUE,
 //                        arg2:
@@ -43,14 +43,6 @@ impl Hash {
         Hash { val: unsafe { rb_hash_new() } }
     }
 
-    pub fn from_value(val: VALUE) -> Self {
-        Hash { val: val }
-    }
-
-    pub fn to_value(&self) -> VALUE {
-        self.val
-    }
-
     pub fn aref(&self, key: VALUE) -> VALUE {
         unsafe { rb_hash_aref(self.val, key) }
     }
@@ -60,11 +52,23 @@ impl Hash {
     }
 
     pub fn keys(&self) -> Array {
-        let value = RubyValue::from_value(unsafe { rb_funcall(self.val, rb_intern(cast_str("keys\x00")), 0) } );
+        let value : Option<Array> = FromValue::from_value(unsafe { rb_funcall(self.val, rb_intern(cast_str("keys\x00")), 0) } );
         match value {
-            Some(RubyValue::Array(arr)) => arr,
+            Some(arr) => arr,
             _ => panic!("Unexpected result of hash.keys")
         }
+    }
+}
+
+impl FromValue for Hash {
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::Hash => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
+    }
+    fn from_value_unchecked(value: VALUE) -> Self {
+        Hash { val: value }
     }
 }
 
