@@ -1,6 +1,5 @@
 use ruby::*;
-use std::ops;
-use super::{RubyValue, cast_str};
+use super::{RubyValue, cast_str, ToValue, FromValue};
 
 //
 // pub fn rb_ary_new() -> VALUE;
@@ -80,12 +79,8 @@ impl Array {
         Array { val: unsafe { rb_ary_new_capa(capacity as i64) } }
     }
 
-    pub fn to_value(&self) -> VALUE {
-        self.val
-    }
-
-    pub fn push(&mut self, value: VALUE) -> VALUE {
-        unsafe { rb_ary_push(self.val, value) }
+    pub fn push<T>(&mut self, value: T) -> VALUE where T: ToValue {
+        unsafe { rb_ary_push(self.val, value.to_value()) }
     }
 
     pub fn pop(&mut self) -> VALUE {
@@ -100,16 +95,29 @@ impl Array {
         unsafe { rb_ary_unshift(self.val, value) }
     }
 
+    // let r_basic : *mut Struct_RBasic = unsafe { transmute(self.val) };
+    // if (*r_basic).flags & RARRAY_EMBED_FLAG > 0 {
+    //     (*r_basic).flags >> RARRAY_EMBED_LEN_SHIFT & (RARRAY_EMBED_LEN_MASK >> RARRAY_EMBED_LEN_SHIFT)
+    // } else {
+    //     let r_array : *mut Struct_RArray = unsafe { transmute(self.val) };
+    //     unsafe { (*(*r_array)._as.heap()) }.len as usize
+    // }
     pub fn len(&self) -> usize {
         let value = RubyValue::from_value(unsafe { rb_funcall(self.val, rb_intern(cast_str("size\x00")), 0) } );
         match value {
-            RubyValue::Fixnum(len) => len as usize,
+            Some(RubyValue::Fixnum(len)) => len as usize,
             _ => panic!("Unexpected result of array.size")
         }
     }
 
     pub fn entry(&self, index: usize) -> VALUE {
         unsafe { rb_ary_entry(self.to_value(), index as i64) }
+    }
+}
+
+impl ToValue for Array {
+    fn to_value(&self) -> VALUE {
+        self.val
     }
 }
 

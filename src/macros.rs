@@ -1,8 +1,8 @@
 use ruby::*;
 
 #[inline(always)]
-pub fn INT2FIX(i: u64) -> VALUE {
-    (i << 1 | RUBY_FIXNUM_FLAG as u64) as VALUE
+pub fn INT2FIX(i: i64) -> VALUE {
+    (i << 1 | RUBY_FIXNUM_FLAG as i64) as VALUE
 }
 
 // RB_IMMEDIATE_P(x) ((VALUE)(x) & RUBY_IMMEDIATE_MASK)

@@ -1,15 +1,19 @@
 #![feature(libc)]
+#![feature(associated_consts)]
 
 extern crate libc;
 
 #[allow(dead_code, non_upper_case_globals, non_camel_case_types)]
 mod ruby;
 mod array;
+mod hash;
+#[allow(dead_code, non_upper_case_globals, non_camel_case_types)]
 mod macros;
 
 use ruby::*;
 use macros::*;
 use array::Array;
+use hash::Hash;
 use std::mem::transmute;
 use std::ffi::{CString, CStr};
 
@@ -75,46 +79,140 @@ impl RubyType {
 #[derive(Debug)]
 enum RubyValue {
     Nil, // T_NIL
+    Fixnum(i64), // T_FIXNUM
     Float(f64), //T_FLOAT
     Bool(bool), // T_TRUE, T_FALSE
     String(String), // T_STRING
     Array(Array), // T_ARRAY
-    Hash, // T_HASH
-    Struct, // T_STRUCT
-    Bignum, // T_BIGNUM
-    Fixnum(i64), // T_FIXNUM
-    Complex, // T_COMPLEX
-    Rational, // T_RATIONAL
-    File, // T_FILE
-    Symbol, //T_SYMBOL
+    Hash(Hash), // T_HASH
+    // Struct, // T_STRUCT
+    // Bignum, // T_BIGNUM
+    // Complex, // T_COMPLEX
+    // Rational, // T_RATIONAL
+    // File, // T_FILE
+    Symbol(VALUE), //T_SYMBOL
     Object(VALUE)
 }
 
-impl RubyValue {
-    fn from_value(mut value: VALUE) -> Self {
-        use std::slice;
+pub trait ToValue {
+    fn to_value(&self) -> VALUE;
+}
+
+pub trait FromValue: Sized {
+    const RUBY_TYPE: RubyType = RubyType::Object;
+    fn from_value(value: VALUE) -> Option<Self> {
         match RubyType::from_value(value) {
-            RubyType::False => RubyValue::Bool(false),
-            RubyType::True => RubyValue::Bool(true),
-            RubyType::String => {
-                unsafe {
-                    let strlen = ruby::rb_str_strlen(value) as usize;
-                    let ptr = ruby::rb_string_value_ptr(&mut value) as *const u8;
-                    let buf = slice::from_raw_parts(ptr, strlen);
-                    RubyValue::String(String::from_utf8_lossy(buf).into_owned())
-                }
-            },
-            RubyType::Fixnum => RubyValue::Fixnum(unsafe { ruby::rb_fix2int(value) }),
-            RubyType::Float => RubyValue::Float(unsafe { ruby::rb_float_value(value) }),
-            RubyType::Nil => RubyValue::Nil,
-            RubyType::Array => RubyValue::Array(Array::from_value(value)),
-            _ => RubyValue::Object(value)
+            Self::RUBY_TYPE => Some(FromValue::from_value_unchecked(value)),
+            _ => None
         }
     }
+    fn from_value_unchecked(value: VALUE) -> Self;
+}
+//
+// impl FromValue for RubyValue {
+//     fn from_value_unchecked(value: VALUE) -> Self {
+//         use std::slice;
+//         match RubyType::from_value(value) {
+//             RubyType::False => RubyValue::Bool(false),
+//             RubyType::True => RubyValue::Bool(true),
+//             RubyType::Nil => RubyValue::Nil,
+//             RubyType::Fixnum => RubyValue::Fixnum(unsafe { ruby::rb_fix2int(value) }),
+//             RubyType::Float => RubyValue::Float(unsafe { ruby::rb_float_value(value) }),
+//             RubyType::Symbol => RubyValue::Symbol(value),
+//             RubyType::Array => RubyValue::Array(Array::from_value(value)),
+//             RubyType::Hash => RubyValue::Hash(Hash::from_value(value)),
+//             RubyType::String => {
+//                 unsafe {
+//                     let strlen = ruby::rb_str_strlen(value) as usize;
+//                     let ptr = ruby::rb_string_value_ptr(&mut value) as *const u8;
+//                     let buf = slice::from_raw_parts(ptr, strlen);
+//                     RubyValue::String(String::from_utf8_lossy(buf).into_owned())
+//                 }
+//             },
+//             _ => RubyValue::Object(value)
+//         }
+//     }
+//     fn from_value(mut value: VALUE) -> Option<Self> {
+//         Some(FromValue::from_value_unchecked(value))
+//     }
+// }
 
+// impl ToValue for RubyValue {
+//     fn to_value(&self) -> VALUE {
+//         match *self {
+//             RubyValue::Bool(true) => RUBY_Qtrue as VALUE,
+//             RubyValue::Bool(false) => RUBY_Qfalse as VALUE,
+//             RubyValue::Nil => RUBY_Qnil as VALUE,
+//             RubyValue::Fixnum(num) => INT2FIX(num),
+//             RubyValue::Float(num) => unsafe { rb_float_new(num) },
+//             RubyValue::Symbol(val) => val,
+//             RubyValue::Array(ref arr) => arr.to_value(),
+//             RubyValue::Hash(ref hash) => hash.to_value(),
+//             RubyValue::String(ref s) => unsafe { rb_str_new_cstr(CString::new(s.clone()).unwrap().as_ptr() as *const i8) },
+//             RubyValue::Object(val) => val,
+//         }
+//     }
+// }
+
+impl FromValue for VALUE {
+    fn from_value(val: VALUE) -> Option<Self> {
+        Some(val)
+    }
+
+    fn from_value_unchecked(val: VALUE) -> Self {
+        val
+    }
+}
+
+impl ToValue for VALUE {
     fn to_value(&self) -> VALUE {
-        match *self {
-            _ => unimplemented!()
+        *self
+    }
+}
+
+
+// Core type from value
+
+impl FromValue for bool {
+    fn from_value(value: VALUE) -> Option<Self> {
+        match RubyType::from_value(value)  {
+            RubyType::False | RubyType::False => Some(FromValue::from_value_unchecked(value)),
+            _ => None
+        }
+    }
+    fn from_value_unchecked(value: VALUE) -> Self {
+        match RubyType::from_value(value)  {
+            RubyType::False => false,
+            RubyType::True => true,
+            _ => panic!("Unhandled value")
+        }
+    }
+}
+
+
+impl FromValue for i64 {
+    const RUBY_TYPE: RubyType = RubyType::Fixnum;
+    fn from_value_unchecked(value: VALUE) -> Self {
+        unsafe { ruby::rb_fix2int(value) }
+    }
+}
+
+impl FromValue for f64 {
+    const RUBY_TYPE: RubyType = RubyType::Float;
+    fn from_value_unchecked(value: VALUE) -> Self {
+        unsafe { ruby::rb_float_value(value) }
+    }
+}
+
+impl FromValue for String {
+    const RUBY_TYPE: RubyType = RubyType::String;
+    fn from_value_unchecked(value: VALUE) -> Self {
+        use std::slice;
+        unsafe {
+            let strlen = ruby::rb_str_strlen(value) as usize;
+            let ptr = ruby::rb_string_value_ptr(&mut value) as *const u8;
+            let buf = slice::from_raw_parts(ptr, strlen);
+            String::from_utf8_lossy(buf).into_owned()
         }
     }
 }
@@ -128,26 +226,32 @@ pub unsafe extern "C" fn Init_test_rust() {
 }
 
 #[no_mangle]
-pub extern "C" fn foo(this: VALUE, arg: VALUE) -> VALUE { //this: VALUE, argc: usize, argv: *const VALUE
+pub extern "C" fn foo(_this: VALUE, arg: VALUE) -> VALUE { //argc: usize, argv: *const VALUE, this: VALUE
     ruby_eval_string("puts 'hello world from rust'");
     let mut ary = Array::new();
-    ary.push(RUBY_Qnil as VALUE);
-    ary.push(RUBY_Qtrue as VALUE);
+    ary.push(RubyValue::Nil);
+    ary.push(RubyValue::Bool(true));
     ary.push(INT2FIX(25));
-    ary.push(INT2FIX(rb_type(arg) as u64));
+    ary.push(INT2FIX(rb_type(arg) as i64));
     println!("Type of arg: {:?}", RubyType::from_value(arg));
     println!("Arg value: {:?}", RubyValue::from_value(arg));
-    if let RubyValue::Array(arr) = RubyValue::from_value(arg) {
+    if let Some(RubyValue::Array(arr)) = RubyValue::from_value(arg) {
         for val in arr {
             println!("Array item: {:?}", RubyValue::from_value(val))
         }
     }
+
+    if let Some(RubyValue::Hash(hash)) = RubyValue::from_value(arg) {
+        println!("Hash len: {:?}", RubyValue::from_value(hash.len()));
+        println!("Hash keys: {:?}", hash.keys().into_iter().map(|itm| RubyValue::from_value(itm)).collect::<Vec<_>>() );
+    }
+
     println!("Arg class name: {:?}", unsafe { CStr::from_ptr(rb_obj_classname(arg)) } );
     println!("Arg class name manual: {:?}", unsafe { RubyValue::from_value(rb_class_name(rb_funcall(arg, rb_intern(cast_str("class\x00")), 0))) } );
     ary.to_value()
 }
 
-fn ruby_define_singleton_method(module: VALUE, name: &str, func: extern "C" fn(VALUE, VALUE) -> VALUE , argc: i32) {
+fn ruby_define_singleton_method(module: VALUE, name: &str, func: extern "C" fn(VALUE, VALUE) -> VALUE, argc: i32) {
     let buf = CString::new(name).unwrap();
     unsafe { rb_define_singleton_method(module, buf.as_ptr() as *const i8, Some(transmute(func)), argc); }
 }
