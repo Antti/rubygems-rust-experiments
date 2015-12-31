@@ -1,5 +1,6 @@
 use ruby::*;
 use super::{cast_str, ToValue, FromValue, RubyType};
+use std::fmt;
 
 //
 // pub fn rb_ary_new() -> VALUE;
@@ -54,8 +55,6 @@ use super::{cast_str, ToValue, FromValue, RubyType};
 //                                                       -> VALUE>) -> VALUE;
 // pub fn rb_ary_resize(ary: VALUE, len: ::libc::c_long) -> VALUE;
 
-
-#[derive(Debug)]
 pub struct Array {
     val: VALUE
 }
@@ -83,7 +82,7 @@ impl Array {
         unsafe { rb_ary_pop(self.val) }
     }
 
-    pub fn shift(&mut self, value: VALUE) -> VALUE {
+    pub fn shift(&mut self) -> VALUE {
         unsafe { rb_ary_shift(self.val) }
     }
 
@@ -154,5 +153,12 @@ impl IntoIterator for Array {
     type IntoIter = ArrayIterator;
     fn into_iter(self) -> Self::IntoIter {
         ArrayIterator::new(self)
+    }
+}
+
+
+impl fmt::Debug for Array {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Array({})", String::from_value_unchecked(unsafe { rb_inspect(self.val) }) )
     }
 }

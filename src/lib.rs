@@ -1,17 +1,17 @@
 #![feature(libc)]
 extern crate libc;
 
-#[allow(dead_code, non_upper_case_globals, non_camel_case_types)]
+#[allow(dead_code, non_upper_case_globals, non_camel_case_types, non_snake_case)]
 mod ruby;
 mod array;
 mod hash;
-#[allow(dead_code, non_upper_case_globals, non_camel_case_types)]
+#[allow(dead_code, non_upper_case_globals, non_camel_case_types, non_snake_case)]
 mod macros;
 
 use ruby::*;
 use macros::*;
-use array::Array;
-use hash::Hash;
+pub use array::Array;
+pub use hash::Hash;
 
 use std::mem::transmute;
 use std::ffi::{CString, CStr};
@@ -67,9 +67,9 @@ impl RubyType {
     }
 }
 
-struct WrapValue(VALUE);
+pub struct InspectValue(VALUE);
 
-impl fmt::Debug for WrapValue {
+impl fmt::Debug for InspectValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ruby_type = RubyType::from_value(self.0);
         match ruby_type {
@@ -78,10 +78,10 @@ impl fmt::Debug for WrapValue {
             RubyType::Float => write!(f, "Float({})", f64::from_value_unchecked(self.0)),
             RubyType::True | RubyType::False => write!(f, "Bool({})", bool::from_value_unchecked(self.0)),
             RubyType::String => write!(f, "String({})", String::from_value_unchecked(self.0)),
-            RubyType::Symbol => write!(f, "Symbol(_not_implemented_yet_)"),
-            RubyType::Array => write!(f, "Array"),
-            RubyType::Hash => write!(f, "Hash"),
-            _ => write!(f, "Object")
+            // RubyType::Symbol => write!(f, "Symbol(_not_implemented_yet_)"),
+            RubyType::Array => write!(f, "{:?}", Array::from_value_unchecked(self.0)),
+            RubyType::Hash => write!(f, "{:?}", Hash::from_value_unchecked(self.0)),
+            _ => write!(f, "Object({})", String::from_value_unchecked(unsafe { rb_inspect(self.0) }) )
         }
     }
 }
@@ -259,13 +259,13 @@ pub extern "C" fn foo(_this: VALUE, arg: VALUE) -> VALUE { //argc: usize, argv: 
     // println!("Arg value: {:?}", RubyValue::from_value(arg));
     if let Some(arr) = Array::from_value(arg) {
         for val in arr {
-            println!("Array item: {:?}", WrapValue(val))
+            println!("Array item: {:?}", InspectValue(val))
         }
     }
 
     if let Some(hash) = Hash::from_value(arg) {
         println!("Hash len: {:?}", i32::from_value(hash.len()));
-        println!("Hash keys: {:?}", hash.keys().into_iter().map(|itm| WrapValue(itm)).collect::<Vec<_>>() );
+        println!("Hash keys: {:?}", hash.keys().into_iter().map(|itm| InspectValue(itm)).collect::<Vec<_>>() );
     }
 
     println!("Arg class name: {:?}", unsafe { CStr::from_ptr(rb_obj_classname(arg)) } );

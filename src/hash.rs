@@ -1,6 +1,7 @@
 use ruby::*;
 use array::Array;
 use super::{cast_str, FromValue, ToValue, RubyType};
+use std::fmt;
 
 // pub fn rb_hash_foreach(arg1: VALUE,
 //                        arg2:
@@ -33,7 +34,6 @@ use super::{cast_str, FromValue, ToValue, RubyType};
 // pub fn rb_hash_iter_lev(arg1: VALUE) -> ::libc::c_int;
 // pub fn rb_hash_ifnone(arg1: VALUE) -> VALUE;
 
-#[derive(Debug)]
 pub struct Hash {
     val: VALUE
 }
@@ -75,5 +75,11 @@ impl FromValue for Hash {
 impl ToValue for Hash {
     fn to_value(&self) -> VALUE {
         self.val
+    }
+}
+
+impl fmt::Debug for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Hash({})", String::from_value_unchecked(unsafe { rb_inspect(self.val) }) )
     }
 }
